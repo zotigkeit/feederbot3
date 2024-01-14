@@ -45,3 +45,13 @@ Outputs food list as CSV
 ### `export-foods-json.js`
 
 Outputs food list as JSON
+
+## Known issues
+
+### Uncontrolled exponential growth
+
+After several months of play, a dedicated group of players can achieve uncontrolled exponential growth as their supersize timer approaches 0.  This effect can then spread to other players through feeding.  Recommend adding a minimum wait time of several hours for the /supersize command.
+
+### UserStats corruption
+
+User statistics are fairly susceptible to corruption from unexpected shutdowns, being merely JSON files.  Recommend frequent backups, or ideally migrating to a stable database.
