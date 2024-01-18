@@ -28,7 +28,7 @@ node bot-main.js
 
 * Recommended additional steps...
 
-* * Add your contact info to `bot-main.js` and `commands/help.js` to get feedback from your users
+* * Add your contact info to `bot-main.js`, `commands/feederbot.js`, and `commands/help.js` to get feedback from your users
 
 * * Add more foods to `foods.js`
 
