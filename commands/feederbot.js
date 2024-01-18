@@ -16,7 +16,7 @@ module.exports = {
 				'> For details on age-restricted commands, go here:\n' +
 				'> https://support.discord.com/hc/articles/10123937946007 \n' +
 				'> \n' +
-				'> If you have questions, send a direct message to `zotigkeit#5581`.'
+				'> If you have questions, send a direct message to `[CONTACT INFO HERE]`.'
 		})
 	},
 }
