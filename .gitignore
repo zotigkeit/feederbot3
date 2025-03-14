@@ -1,0 +1,10 @@
+node_modules/
+userStats/
+config.json
+*.txt
+*.csv
+package-lock.json
+exported-foods.json
+foods.js
+go.bat
+go.sh
