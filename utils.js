@@ -1,6 +1,8 @@
 const { foodList, colors } = require('./foods.js')
 
 const FB = {
+	maxDigestTime: 24*60*60*1000, // reduce portion size if meal would cause digestion >= this length
+	
 	dayLength: 24*60*60*1000, // hours*minutes*seconds*milliseconds
 	hourLength: 60*60*1000, //minutes*seconds*milliseconds
 	minuteLength: 60*1000, //Minute length, seconds*milliseconds
@@ -26,8 +28,8 @@ const FB = {
 	happyHourCalorieFactor: 2.0, // calorie multi for Happy Hour
 	
 	supersizeCooldownInterval: 16*60*60*1000, //16*60*60*1000 // base cooldown for /supersize command
+	supersizeAdditionalCooldown: 999, // inflexible amt of time added to /supersize cooldown
 	
-	// color codes for command-line output
 	black: '\x1b[30;1m',
 	red: '\x1b[31;1m',
 	green: '\x1b[32;1m',
@@ -56,14 +58,20 @@ module.exports = {
 		}
 	},
 	millisToDHMS: function(millis) {
-		return (millis >= FB.dayLength ? Math.floor(millis / FB.dayLength) + ':' : '  ') + (millis >= FB.hourLength ? String(Math.floor(millis % FB.dayLength / FB.hourLength)).padStart(2, '0') + ':' : '   ') + (millis >= FB.minuteLength ? String(Math.floor(millis % FB.hourLength / FB.minuteLength)).padStart(2, '0') + ':' : '   ') + (millis >= 1000 ? String(Math.floor(millis % FB.minuteLength / 1000)).padStart(2, '0') : '  ') + '.' + String(Math.floor(millis % 1000)).padStart(3, '0')
+		var str = millis >= FB.dayLength ? Math.floor(millis / FB.dayLength) + 'd' : '  '
+		str += millis >= FB.hourLength ? String(Math.floor(millis % FB.dayLength / FB.hourLength)).padStart(2, '0') + ':' : '   '
+		str += millis >= FB.minuteLength ? String(Math.floor(millis % FB.hourLength / FB.minuteLength)).padStart(2, '0') + ':' : '   '
+		str += millis >= 1000 ? String(Math.floor(millis % FB.minuteLength / 1000)).padStart(2, '0') : '  '
+		str += '.' + String(Math.floor(millis % 1000)).padStart(3, '0')
+		return str
 	},
 	applyAbsenceEffects: function(userFileContent) {
+		var totalCalories = userFileContent['totalCalories'] || 0
 		var calorieOffset = userFileContent['calorieOffset'] || 0
-		var daysSinceJoin = Math.round((Date.now() - userFileContent['dateMade']) / FB.dayLength + 1) || 1
+		var daysSinceJoinOrPrestige = Math.round((Date.now() - (userFileContent['datePrestige'] ?? userFileContent['dateMade'])) / FB.dayLength + 1) || 1
 		var daysWithoutEating = Math.max(0, (Date.now() - (userFileContent['latestMealTime'] || Date.now())) / FB.dayLength)
 		
-		var totalPounds = (FB.baseWeight + (userFileContent['totalCalories'] + calorieOffset - (daysSinceJoin * FB.caloriesPerDay)) / FB.caloriesPerPound) || FB.baseWeight
+		var totalPounds = (FB.baseWeight + (userFileContent['totalCalories'] + calorieOffset - (daysSinceJoinOrPrestige * FB.caloriesPerDay)) / FB.caloriesPerPound) || FB.baseWeight
 		
 		if (totalPounds < FB.minPounds) { // apply minimum weight check
 			userFileContent['calorieOffset'] = calorieOffset + (FB.minPounds - totalPounds) * FB.caloriesPerPound; // increase user's calorie offset to raise their weight to the minimum
@@ -73,14 +81,22 @@ module.exports = {
 		userFileContent['calorieOffset'] = calorieOffset + FB.caloriesPerDay * (daysWithoutEating - Math.pow(FB.hibernationFactor, daysWithoutEating) / Math.log(FB.hibernationFactor) + 1 / Math.log(FB.hibernationFactor))
 					
 		// update supersize power if over threshold	
-		var supersizeFactor = userFileContent['supersizeFactor'] || 1
-		var daysSinceSupersize = Math.min((Date.now() - userFileContent['latestSupersizeUpdate'] || 0) / FB.dayLength, 30)
-		if (daysSinceSupersize >= 2) {
-			userFileContent['supersizeFactor'] = userFileContent['supersizeFactor'] || 1
-			userFileContent['supersizeFactor'] /= Math.pow(2, Math.floor(daysSinceSupersize - 1)) // halve for each day
-			userFileContent['supersizeFactor'] = Math.max(userFileContent['supersizeFactor'], 1)
-			userFileContent['latestSupersizeUpdate'] += daysSinceSupersize * FB.dayLength // no longer penalize for already-passed days
+		var supersizeFactor = Math.min(1e308, userFileContent['supersizeFactor']) || 1
+			var daysSinceSupersize = Math.min((Date.now() - userFileContent['latestSupersizeUpdate'] || 0) / FB.dayLength, 30)
+			if (daysSinceSupersize >= 2) {
+				userFileContent['supersizeFactor'] = userFileContent['supersizeFactor'] || 1
+				userFileContent['supersizeFactor'] /= Math.pow(2, Math.floor(daysSinceSupersize - 1)) // halve for each day
+				userFileContent['supersizeFactor'] = Math.max(userFileContent['supersizeFactor'], 1)
+				userFileContent['latestSupersizeUpdate'] += daysSinceSupersize * FB.dayLength // no longer penalize for already-passed days
+			}
+		
+		// prevent overflow
+		if (calorieOffset + totalCalories == Number.POSITIVE_INFINITY) {
+			userFileContent['calorieOffset'] = 0
+			userFileContent['totalCalories'] = Number.POSITIVE_INFINITY
+			userFileContent['isInfinite'] = true
 		}
+		
 		return userFileContent
 	},
 	strToCanonFood: function(str) {
@@ -101,6 +117,42 @@ module.exports = {
 			depth = depth + 1
 		}
 		return { food: foodList[str], name: str }
+	},
+	numberToSuperscript: function(num) {
+		str = num + ''
+		for (var i = 0; i < str.length; i++) {
+			str[i] = {
+				'0': '⁰',
+				'1': '¹',
+				'2': '²',
+				'3': '³',
+				'4': '⁴',
+				'5': '⁵',
+				'6': '⁶',
+				'7': '⁷',
+				'8': '⁸',
+				'9': '⁹',
+			}[str[i]] ?? str[i]
+		}
+	},
+	formatBigNumber: function(num) {
+		if ((typeof num) !== 'number') { return num }
+		if (num == Number.POSITIVE_INFINITY) {
+			return 'Infinity'
+		} else if (num < 1e20) {
+			return num.toLocaleString()
+		} else {
+			return num.toPrecision(4).split('+').join('')
+		}
+	},
+	markBold: function(str) { // apply markdown bold formatting to string
+		return '**' + str + '**'
+	},
+	markItalic: function(str) { // apply markdown bold formatting to string
+		return '*' + str + '*'
+	},
+	markCode: function(str) { // apply markdown bold formatting to string
+		return '`' + str + '`'
 	},
 	FB: FB,
 }

@@ -21,7 +21,7 @@ module.exports = {
 				'> \n' +
 				'> These commands only appear in Age-Restricted Channels.\n' +
 				'> \n' +
-				'> If you have feedback, questions, or wish to be removed from the user database, [CONTACT INFO HERE]'
+				'> If you have feedback, questions, or wish to be removed from the user database, send a direct message to `ADD CONTACT HERE` or join the community server (check the bot\'s profile for a link).'
 		})
 	},
 }

@@ -53,9 +53,9 @@ client.on('interactionCreate', async interaction => {
 	} catch (error) {
 		console.error(error)
 		try {
-			await interaction.reply({ content: 'There was an error while running this command!\nPlease message `[CONTACT INFO HERE]` if this continues happening.', ephemeral: true })
+			await interaction.reply({ content: 'There was an error while running this command!\nPlease message `ADD CONTACT HERE` if this continues happening.', ephemeral: true })
 		} catch (error2) {
-			await interaction.editReply({ content: 'There was an error while running this command!\nPlease message `[CONTACT INFO HERE]` if this continues happening.', ephemeral: true })
+			await interaction.editReply({ content: 'There was an error while running this command!\nPlease message `ADD CONTACT HERE` if this continues happening.', ephemeral: true })
 		}
 	}
 })

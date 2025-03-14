@@ -2,7 +2,7 @@ const { foodList, colors } = require('./foods.js')
 const fs = require('node:fs')
 const path = require('node:path')
 const { EmbedBuilder } = require('discord.js')
-const { strToCanonFood, millisToTimeString, applyAbsenceEffects, millisToDHMS, FB } = require('./utils.js')
+const { strToCanonFood, millisToTimeString, applyAbsenceEffects, millisToDHMS, formatBigNumber, FB } = require('./utils.js')
 const { clientId } = require('./config.json')
 const { promisify } = require('node:util')
 const fs_exists_async = promisify(fs.exists)
@@ -28,6 +28,8 @@ module.exports = {
 		// lodge user errors
 		var errorText
 		
+		var exceededDigestLimit = false
+		
 		var sentFoodName = sentFood.replace(/_/g, ' ')
 		if (sentEntry.name) sentFoodName = sentEntry.name.replace(/_/g, ' ') ?? sentFoodName
 		if (sentEntry.food) sentFoodName = sentEntry.food.goodName ?? sentFoodName
@@ -40,12 +42,14 @@ module.exports = {
 					sentEntry = strToCanonFood(sentFood)
 				} while (sentEntry.food.botOnly || sentEntry.food.hidden || sentEntry.food.weird || foodList[sentFood].aliasTarget)
 				sentFoodName = sentEntry.food.goodName ?? sentEntry.name.replace(/_/g, ' ') ?? sentFood.replace(/_/g, ' ')
+			} else if (sentFood.toLowerCase() == 'everything') {
+				// pass
 			} else {
 				if (!sentEntry.food) {
 					console.log (FB.cyan + 'user requested new food:', sentFood + FB.reset)
 					fs.appendFileSync('requested-foods.txt', '\n' + sentFood)
 				}
-				return '`Sorry, I don\'t have \"' + interaction.options.getString('food') + '\" in my database.`'
+				return '`Sorry, I don\'t have "' + interaction.options.getString('food') + '" in my database.`'
 			}
 		}
 		
@@ -57,10 +61,76 @@ module.exports = {
 		const userFilePath = require('path').resolve('userStats', targetUser.id + '.json')
 		const invokerFilePath = require('path').resolve('userStats', interaction.user.id + '.json')
 		var targetInDatabase = await fs_exists_async(userFilePath)
+		
 		if (!isSelfFeed) var invokerInDatabase = await fs_exists_async(invokerFilePath)
 		if (targetInDatabase) { //If you're both in the database
 			//Parses JSON with the user's file content
 			var userFileContent = applyAbsenceEffects(JSON.parse((fs.readFileSync(userFilePath, 'utf-8').trim())))
+			
+			// handle prestige
+			if (sentFood.toLowerCase() == 'everything') {
+				if (userFileContent['isInfinite'] && (isSelfFeed || targetUser.bot)) {
+					userFileContent['totalCalories'] = 0
+					userFileContent['recentFoods'] = [ {
+						'name': sentEntry.name,
+						'expiry': Date.now() + FB.dayLength
+					} ],
+					userFileContent['latestMealTime'] = Date.now()
+					userFileContent['lastEatenFood'] = 'everything'
+					userFileContent['foodDigestEnd'] = Date.now()
+					userFileContent['lastBellyRub'] = 0
+					
+					userFileContent['latestSupersizeUpdate'] = 0
+					userFileContent['supersizeFactor'] = 1
+					userFileContent['supersizeCooldownEnd'] = 0
+					
+					userFileContent['isInfinite'] = false
+					userFileContent['prestige'] = 1 + (userFileContent['prestige'] || 0)
+					userFileContent['datePrestige'] = Date.now()
+					
+					userFileContent['calorieOffset'] = userFileContent['prestige'] * FB.caloriesPerPound * 100
+					
+					if (!userFileContent['foodsEaten'].includes('everything')) {
+						userFileContent['foodsEaten'].push('everything')
+					}
+					
+					if (isSelfFeed) {	// Rewrites JSON
+						userFileContent['supersizeFactor'] = 1
+						fs.writeFileSync(userFilePath, JSON.stringify(userFileContent, null, '\t'))
+					} else {
+						fs.writeFileSync(userFilePath, JSON.stringify(userFileContent, null, '\t'))
+						if (invokerFileContent) {
+							invokerFileContent['supersizeFactor'] = 1
+							fs.writeFileSync(invokerFilePath, JSON.stringify(invokerFileContent, null, '\t'))
+						}
+					}
+					
+					var embedTitle, embedDesc, embedAuthor, calorieString
+	
+					//Varies title and desc if you feed yourself or someone else
+					if (interaction.user.id == targetUser.id) { 
+						embedTitle = 'You win.'
+						embedDesc = targetNick + ' just ate everything!'
+					} else if (clientId == targetUser.id) { // if the bot is being fed
+						embedTitle = 'I win.'
+						embedDesc = 'I ate everything!'
+					} else {
+						embedTitle = 'You win.'
+						embedDesc = targetNick + ' just ate everything!'
+					}
+
+					const feedEmbed = new EmbedBuilder()
+						.setColor('#000000')
+						.setTitle(embedTitle)
+						.setDescription(embedDesc)
+						.setFooter({ text: 'Sent by ' + invokerNick, iconURL: interaction.user.displayAvatarURL() })
+					feedEmbed.setAuthor({ name: targetNick + ' has prestiged.', iconURL: targetUser.displayAvatarURL()})
+					return { embeds: [feedEmbed] }
+				
+				} else { // not ready for prestige
+					return '`Sorry, I don\'t have "' + interaction.options.getString('food') + '" in my database.`'
+				}
+			}
 			
 			if (isSelfFeed) {
 				invokerSupersizeFactor = userFileContent['supersizeFactor'] || 1
@@ -74,8 +144,8 @@ module.exports = {
 			}
 			
 			var calorieOffset = userFileContent['calorieOffset'] || 0
-			var daysSinceJoin = Math.round((Date.now() - userFileContent['dateMade']) / FB.dayLength + 1) || 1
-			var totalPounds = (FB.baseWeight + (userFileContent['totalCalories'] + calorieOffset - (daysSinceJoin * FB.caloriesPerDay)) / FB.caloriesPerPound) || FB.baseWeight
+			var daysSinceJoinOrPrestige = Math.round((Date.now() - (userFileContent['datePrestige'] ?? userFileContent['dateMade'])) / FB.dayLength + 1) || 1
+			var totalPounds = (FB.baseWeight + (userFileContent['totalCalories'] + calorieOffset - (daysSinceJoinOrPrestige * FB.caloriesPerDay)) / FB.caloriesPerPound) || FB.baseWeight
 			
 			var recentFoods = userFileContent['recentFoods'] || [{}]
 			var recentFoodsLong = userFileContent['recentFoodsLong'] || [{}]
@@ -101,13 +171,26 @@ module.exports = {
 			}
 			
 			if (Date.now() >= (userFileContent['foodDigestEnd'] || 0) || !foodList[userFileContent['lastEatenFood']]) { //If your timeout time is done
-				var digest = Math.max((sentEntry.food.digestTime ?? 1.0e99) * FB.minuteLength * invokerSupersizeFactor * happyHourMulti * Math.pow(1 - FB.voracityFactor, 8 * Math.pow(Math.min(Math.max(totalPounds / 100 - 1, 0), 10000) * 0.99 + Math.max(totalPounds / 100 - 1, 0) * 0.01, 0.25)) * fatigueMulti, 5000)
-				userFileContent['totalCalories'] += sentEntry.food.calories * invokerSupersizeFactor * happyHourMulti //Adds to calorie counter
-				userFileContent['latestMealTime'] = Date.now() //resets last meal to now
-				userFileContent['foodDigestEnd'] = Date.now() + digest //determine end of digestion time
-				cosmeticDigestTime = 'Ready for more in ' + millisToTimeString(digest) + '.'
-				userFileContent['lastEatenFood'] = sentEntry.name //replaces latest eaten food
-				userFileContent['calorieOffset'] = calorieOffset
+				if (userFileContent['isInfinite']) { // don't bother running calculations for maxed players
+					cosmeticDigestTime = 'Ready for more.'
+				} else {
+					var digest = Math.max((sentEntry.food.digestTime ?? 1.0e99) * FB.minuteLength * invokerSupersizeFactor * happyHourMulti * Math.pow(1 - FB.voracityFactor, 8 * Math.pow(Math.min(Math.max(totalPounds / 100 - 1, 0), 10000) * 0.99 + Math.max(totalPounds / 100 - 1, 0) * 0.01, 0.25)) * fatigueMulti, 5000)
+					if (digest >= FB.maxDigestTime && !isSelfFeed && !targetUser.bot) { //reduce meal size if too crazy for recipient
+						invokerSupersizeFactor *= FB.maxDigestTime / digest
+						digest = FB.maxDigestTime
+						exceededDigestLimit = true
+					}
+					userFileContent['totalCalories'] += sentEntry.food.calories * invokerSupersizeFactor * happyHourMulti //Adds to calorie counter
+					if (userFileContent['totalCalories'] == Number.POSITIVE_INFINITY) {
+						userFileContent['totalCalories'] = 1e308
+						userFileContent['isInfinite'] = true
+					}
+					userFileContent['latestMealTime'] = Date.now() //resets last meal to now
+					userFileContent['foodDigestEnd'] = Date.now() + (digest || 0) //determine end of digestion time
+					userFileContent['lastEatenFood'] = sentEntry.name //replaces latest eaten food
+					userFileContent['calorieOffset'] = calorieOffset
+					cosmeticDigestTime = 'Ready for more in ' + millisToTimeString(digest || 0) + '.'
+				}
 				recentFoods.push({
 					'name': sentEntry.name,
 					'expiry': Date.now() + FB.dayLength
@@ -135,14 +218,14 @@ module.exports = {
 				}
 				
 				console.log(
-					(sentEntry.food.botOnly ? FB.green : FB.black) + new Date().toLocaleTimeString(),
+					(sentEntry.food.botOnly ? FB.green : (userFileContent['isInfinite'] || false) ? FB.red : FB.black) + new Date().toLocaleTimeString(),
 					targetUser.id,
 					FB.yellow + millisToDHMS(digest) + '\t' + sentEntry.food.calories + FB.reset +
-					'*' + FB.yellow + Math.floor(invokerSupersizeFactor*1000*happyHourMulti)/1000 + FB.reset +
-					'=' + FB.yellow + Math.floor(sentEntry.food.calories * invokerSupersizeFactor * happyHourMulti) + FB.reset + '=>' +
-					FB.yellow + Math.floor(totalPounds + (sentEntry.food.calories * invokerSupersizeFactor * happyHourMulti) / FB.caloriesPerPound) + FB.reset + '#',
+					' * ' + FB.yellow + formatBigNumber(Math.floor(invokerSupersizeFactor*1000*happyHourMulti)/1000) + FB.reset +
+					' = ' + FB.yellow + formatBigNumber(Math.floor(sentEntry.food.calories * invokerSupersizeFactor * happyHourMulti)) + FB.reset + ' => ' +
+					FB.yellow + formatBigNumber(Math.floor(totalPounds + (sentEntry.food.calories * invokerSupersizeFactor * happyHourMulti) / FB.caloriesPerPound)) + FB.reset + '#',
 					(targetUser.bot ? FB.cyan : '') + targetUser.username + FB.reset,
-					(sentEntry.food.botOnly ? FB.green : '') + 'ate',
+					(sentEntry.food.botOnly ? FB.green : '') + '/',
 					sentFoodName.toUpperCase(),
 					FB.reset,
 				)
@@ -176,6 +259,8 @@ module.exports = {
 					latestSupersizeUpdate: 0,
 					supersizeFactor: 1,
 					supersizeCooldownEnd: 0,
+					isInfinite: false,
+					prestige: 0
 				}, null, '\t')
 								
 				cosmeticDigestTime = 'Welcome to FeederBot!'
@@ -217,21 +302,24 @@ module.exports = {
 			embedDesc += '\nIt\'s Happy Hour! ×' + happyHourMulti + ' calories!'
 		}
 		embedDesc += '\n' + cosmeticDigestTime
+		if (exceededDigestLimit) {
+			embedDesc += '\n' + '*(the user is too small to eat the entire meal)*'
+		}
 		const feedEmbed = new EmbedBuilder()
 			.setColor(sentEntry.food.color ?? '#000000')
 			.setTitle(embedTitle)
 			.setDescription(embedDesc)
 			.setFooter({ text: 'Food sent by ' + invokerNick, iconURL: interaction.user.displayAvatarURL() })
-		plusCaloriesString = '+ ' + Math.floor(sentEntry.food.calories * invokerSupersizeFactor * happyHourMulti).toLocaleString() + ' calories!'
+		plusCaloriesString = '+ ' + formatBigNumber(Math.floor(sentEntry.food.calories * invokerSupersizeFactor * happyHourMulti)) + ' calories!'
 		if (invokerSupersizeFactor > 1) {
 			if (happyHourMulti > 1) {
-				plusCaloriesString += ' (' + Math.floor(sentEntry.food.calories) + '×' + Math.floor(invokerSupersizeFactor*10)/10 + '×' + happyHourMulti + ')'
+			plusCaloriesString += ' (' + Math.floor(sentEntry.food.calories) + '×' + Math.floor(invokerSupersizeFactor*10)/10 + '×' + happyHourMulti + ')'
 			} else {
-				plusCaloriesString += ' (' + Math.floor(sentEntry.food.calories) + '×' + Math.floor(invokerSupersizeFactor*10)/10 + ')'
+			plusCaloriesString += ' (' + Math.floor(sentEntry.food.calories) + '×' + Math.floor(invokerSupersizeFactor*10)/10 + ')'
 			}
 		} else {
 			if (happyHourMulti > 1) {
-				plusCaloriesString += ' (' + Math.floor(sentEntry.food.calories) + '×' + happyHourMulti + ')'
+			plusCaloriesString += ' (' + Math.floor(sentEntry.food.calories) + '×' + happyHourMulti + ')'
 			}
 		}
 		feedEmbed.setAuthor({ name: plusCaloriesString, iconURL: targetUser.displayAvatarURL()})

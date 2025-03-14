@@ -3,7 +3,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { promisify } = require('node:util')
 const fs_readdir_async = promisify(fs.readdir)
-const { applyAbsenceEffects, millisToTimeString, millisToDHMS, FB } = require('../utils.js')
+const { applyAbsenceEffects, millisToTimeString, millisToDHMS, formatBigNumber, FB } = require('../utils.js')
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -20,7 +20,7 @@ module.exports = {
 		//Makes list of users to check
 		var files = await fs_readdir_async('userStats/')
 		files.forEach(file => {
-			var filenameId = file.split('.').slice(0, -1).join('.')
+			let filenameId = file.split('.').slice(0, -1).join('.')
 			fileNameIdList.push(filenameId)
 		})
 		const userFilePath = require('path').resolve('userStats', interaction.user.id + '.json')
@@ -38,24 +38,24 @@ module.exports = {
 			if (supersizeCooldownRemaining > 0) {
 				await interaction.editReply ('`/supersize is on cooldown.` **`(' + millisToTimeString(supersizeCooldownRemaining) + ' left)`**')
 			} else {
-				var cooldownLength = FB.supersizeCooldownInterval * (35000000/(Math.max(totalCalories, 0) + 35000000))
+				let cooldownLength = FB.supersizeAdditionalCooldown + FB.supersizeCooldownInterval * (FB.caloriesPerPound * 10000 / (Math.min(Math.max(totalCalories, 0), 1e308) + FB.caloriesPerPound * 10000)) / ((userFileContent['prestige'] || 0) + 1)
 				userFileContent['supersizeCooldownEnd'] = Date.now() + cooldownLength
 				if (interaction.user.bot) { // prevent bot users from going ham
-					userFileContent['supersizeFactor'] = Math.max(supersizeFactor + 1, 2)
+					userFileContent['supersizeFactor'] = Math.max(Math.min(supersizeFactor + 1, 1e303), 2)
 				} else {
-					userFileContent['supersizeFactor'] = Math.max(supersizeFactor + 1 + totalCalories / 3500000, 2)
+					userFileContent['supersizeFactor'] = Math.max(Math.min(supersizeFactor + 1 + Math.min(totalCalories, 1e308)/ 3500000 * ((userFileContent['prestige'] || 0) + 2), 1e303), 2)
 				}
 				userFileContent['latestSupersizeUpdate'] = Date.now()
 				fs.writeFileSync(userFilePath, JSON.stringify(userFileContent, null, '\t'))
 				if (Math.floor(userFileContent['supersizeFactor']) == 69) {
-					await interaction.editReply ('`Your next order will be `**`nice`**`. Come back in ' + millisToTimeString(cooldownLength) + ' to supersize again!`')
+					await interaction.editReply ('`Your next order will be `**`' + formatBigNumber(Math.floor(userFileContent['supersizeFactor'] * 10) / 10) + ' times`**` its normal size (nice).`\n`Come back in ' + millisToTimeString(cooldownLength) + ' to supersize again!`')
 				} else {
-					await interaction.editReply ('`Your next order will be `**`' + Math.floor(userFileContent['supersizeFactor'] * 10) / 10 + ' times`**` its normal size. Come back in ' + millisToTimeString(cooldownLength) + ' to supersize again!`')
+					await interaction.editReply ('`Your next order will be `**`' + formatBigNumber(Math.floor(userFileContent['supersizeFactor'] * 10) / 10) + ' times`**` its normal size.`\n`Come back in ' + millisToTimeString(cooldownLength) + ' to supersize again!`')
 				}
 				console.log(
 					FB.black + new Date().toLocaleTimeString(),
 					interaction.user.id,
-					FB.magenta + millisToDHMS(cooldownLength) + '\t' + preAbsenceSupersizeFactor + FB.reset + 'x\t=>' + FB.magenta + previousSupersizeFactor + FB.reset + 'x\t=>' + FB.magenta + userFileContent['supersizeFactor'] + FB.reset + 'x ',
+				FB.magenta + millisToDHMS(cooldownLength) + '\t' + formatBigNumber(preAbsenceSupersizeFactor) + FB.reset + 'x\t=> ' + FB.magenta + formatBigNumber(previousSupersizeFactor) + FB.reset + 'x\t=> ' + FB.magenta + formatBigNumber(userFileContent['supersizeFactor']) + FB.reset + 'x ',
 					interaction.user.username,
 				)
 			}

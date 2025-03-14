@@ -1,6 +1,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
-const { applyAbsenceEffects, millisToTimeString, FB } = require('./utils.js')
+const { applyAbsenceEffects, millisToTimeString, formatBigNumber,
+FB } = require('./utils.js')
 
 //await interaction.editReply({ embeds: [new EmbedBuilder().setDescription('Pong!')] })
 var fileNameIdList = []
@@ -10,13 +11,15 @@ files.forEach(file => {
 	fileNameIdList.push(filenameId)
 })
 
+console.log('userId\tdiscordName\tdateMade\ttotalCalories\ttotalPounds\tlevelNum\tprestige')
+
 fileNameIdList.forEach(function(userId) {
 	//Defined the file path of the user's json
 	var userFilePath = require('path').resolve('userStats', userId + '.json')
 		
 	//Parses user's JSON for eaten calories
 	const userFileContent = applyAbsenceEffects(JSON.parse((fs.readFileSync(userFilePath, 'utf-8').trim())))
-	if (userFileContent['totalCalories'] < 1000000) return
+	//if (userFileContent['totalCalories'] < 1000000) return
 	
 	var daysSinceJoin = Math.ceil(Date.now() - userFileContent['dateMade']) / FB.dayLength
 	var calorieOffset = userFileContent['calorieOffset'] || 0
@@ -30,6 +33,6 @@ fileNameIdList.forEach(function(userId) {
 		var levelNum = 0
 	}
 	
-	console.log(new Date(userFileContent['dateMade']).toDateString() + '  (' + millisToTimeString(Date.now() - userFileContent['dateMade']) + ' ago)\t' + userId + '\t' + Math.floor(userFileContent['totalCalories']).toLocaleString() + ' cal\t' + Math.floor(totalPounds).toLocaleString() + ' #\tLv.' + levelNum + '\t' + Math.floor(userFileContent['totalCalories'] / daysSinceJoin).toLocaleString() + ' cal/d')
+console.log('"' + userId + '"\t' + userFileContent['discordName'] + '\t' + new Date(userFileContent['dateMade']).toISOString() + '\t' + userFileContent['totalCalories'] + '\t' + totalPounds + '\t' + levelNum + '\t' + userFileContent['prestige'] || 0)
 })
 console.log('audited ' + fileNameIdList.length + ' users')
